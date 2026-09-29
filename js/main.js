@@ -1,5 +1,6 @@
 // Entry point: loads saved state, wires up events and keeps prices fresh.
 import { getMarkets, searchCoins } from "./coingecko.js";
+import { getMarketsFromPaprika } from "./coinpaprika.js";
 import { getRates } from "./frankfurter.js";
 import Watchlist from "./watchlist.js";
 import {
@@ -23,6 +24,7 @@ import {
 
 const REFRESH_INTERVAL = 60_000; // 60s keeps us well under CoinGecko's free limit
 const MAX_BACKOFF = 5 * 60_000;
+const GECKO_COOLDOWN = 5 * 60_000; // after a CoinGecko failure, use the backup for 5 min
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -63,6 +65,8 @@ const state = {
   updatedAt: null,
   timer: null,
   delay: REFRESH_INTERVAL,
+  source: "CoinGecko",
+  geckoBlockedUntil: 0,
   search: { query: "", results: [], activeIndex: -1, remoteTimer: null, controller: null, searching: false },
 };
 
@@ -82,8 +86,9 @@ function timeLabel(timestamp) {
   return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-function showBanner(message) {
+function showBanner(message, type = "error") {
   dom.banner.textContent = message;
+  dom.banner.dataset.type = type;
   dom.banner.hidden = !message;
 }
 
@@ -117,23 +122,35 @@ async function refreshMarkets({ manual = false } = {}) {
   renderStatus(dom.status, { state: "loading", text: "Updating prices…" });
 
   try {
-    const coins = await getMarkets(ids);
+    const coins = await fetchMarkets(ids);
     const found = new Set(coins.map((coin) => coin.id));
-    // ids that CoinGecko doesn't know anymore are removed from the list
-    ids.filter((id) => !found.has(id)).forEach((id) => {
-      state.watchlist.remove(id);
-      showToast(`“${id}” was not found on CoinGecko and was removed.`, "error");
-    });
+    if (state.source === "CoinGecko") {
+      // ids that CoinGecko doesn't know anymore are removed from the list
+      ids.filter((id) => !found.has(id)).forEach((id) => {
+        state.watchlist.remove(id);
+        showToast(`“${id}” was not found on CoinGecko and was removed.`, "error");
+      });
+    } else {
+      // backup source: keep the old data (or a placeholder row) for any coin it couldn't find
+      ids.filter((id) => !found.has(id)).forEach((id) => {
+        coins.push(state.coins.find((coin) => coin.id === id) ?? placeholderCoin(id));
+      });
+    }
 
     state.coins = state.watchlist.sortByWatchlist(coins);
     state.updatedAt = Date.now();
     state.delay = REFRESH_INTERVAL;
     saveCachedMarkets(state.coins);
-    showBanner("");
+    showBanner(
+      state.source === "CoinGecko"
+        ? ""
+        : "CoinGecko is not responding right now, so prices come from the backup source (CoinPaprika). 7-day charts show the last CoinGecko data.",
+      "info",
+    );
     render();
     renderStatus(dom.status, {
-      state: "ok",
-      text: `Synced via localStorage · Updated ${timeLabel(state.updatedAt)} · Auto 60s`,
+      state: state.source === "CoinGecko" ? "ok" : "backup",
+      text: `${state.source} · Updated ${timeLabel(state.updatedAt)} · Auto 60s`,
     });
     if (manual) showToast("Prices updated");
   } catch (error) {
@@ -145,9 +162,7 @@ async function refreshMarkets({ manual = false } = {}) {
     renderStatus(dom.status, { state: "error", text: "Offline · showing last saved prices" });
     if (state.coins.length === 0) {
       // nothing saved yet: show the rows with names only, prices come on retry
-      state.coins = ids.map(
-        (id) => state.popular.find((coin) => coin.id === id) ?? { id, name: id, symbol: id.slice(0, 4).toUpperCase() },
-      ).map((coin) => ({ ...coin, price: null }));
+      state.coins = ids.map(placeholderCoin);
       render();
     }
   } finally {
@@ -156,6 +171,34 @@ async function refreshMarkets({ manual = false } = {}) {
     dom.refresh.disabled = false;
     scheduleRefresh();
   }
+}
+
+// a row with only the name, used until prices arrive
+function placeholderCoin(id) {
+  const known = state.popular.find((coin) => coin.id === id);
+  return { id, name: known?.name ?? id, symbol: known?.symbol ?? id.slice(0, 4).toUpperCase(), price: null };
+}
+
+// CoinGecko first; if it fails (rate limit / blocked), use CoinPaprika for a while
+async function fetchMarkets(ids) {
+  if (Date.now() >= state.geckoBlockedUntil) {
+    try {
+      const coins = await getMarkets(ids);
+      state.source = "CoinGecko";
+      return coins;
+    } catch (error) {
+      console.warn(error);
+      state.geckoBlockedUntil = Date.now() + GECKO_COOLDOWN;
+    }
+  }
+  const known = ids.map(
+    (id) =>
+      state.coins.find((coin) => coin.id === id) ??
+      state.popular.find((coin) => coin.id === id) ?? { id, name: id, symbol: "" },
+  );
+  const coins = await getMarketsFromPaprika(known);
+  state.source = "CoinPaprika";
+  return coins;
 }
 
 function scheduleRefresh() {
@@ -433,6 +476,7 @@ function bindEvents() {
 
   dom.refresh.addEventListener("click", () => {
     state.delay = REFRESH_INTERVAL;
+    state.geckoBlockedUntil = 0; // a manual refresh always tries CoinGecko again
     refreshMarkets({ manual: true });
   });
 

@@ -6,6 +6,7 @@ const KEYS = {
   currency: "coinpulse:currency",
   markets: "coinpulse:markets",
   rates: "coinpulse:rates",
+  paprikaIds: "coinpulse:paprika-ids",
 };
 
 export const DEFAULT_WATCHLIST = ["bitcoin", "ethereum", "solana", "ripple", "cardano"];
@@ -75,4 +76,14 @@ export function loadCachedRates({ allowStale = false } = {}) {
 
 export function saveCachedRates(rates) {
   write(KEYS.rates, { rates, savedAt: Date.now() });
+}
+
+// ---------- CoinGecko id -> CoinPaprika id (backup source) ----------
+export function loadPaprikaIds() {
+  const map = read(KEYS.paprikaIds, {});
+  return map && typeof map === "object" ? map : {};
+}
+
+export function savePaprikaIds(map) {
+  write(KEYS.paprikaIds, map);
 }
