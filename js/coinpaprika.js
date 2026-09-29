@@ -26,10 +26,25 @@ async function resolveId(coin, idMap) {
   return match.id;
 }
 
+// Free plan only allows the last 24h of history, so without CoinGecko's
+// 7-day data we draw a 24h chart instead. Cached for 30 minutes per coin.
+const historyCache = new Map();
+const HISTORY_MAX_AGE = 30 * 60 * 1000;
+
+async function getHistory24h(paprikaId) {
+  const cached = historyCache.get(paprikaId);
+  if (cached && Date.now() - cached.savedAt < HISTORY_MAX_AGE) return cached.prices;
+  const start = Math.floor(Date.now() / 1000) - 23 * 60 * 60;
+  const data = await getJson(`${BASE_URL}/tickers/${paprikaId}/historical?start=${start}&interval=1h`);
+  const prices = Array.isArray(data) ? data.map((point) => point.price) : [];
+  historyCache.set(paprikaId, { prices, savedAt: Date.now() });
+  return prices;
+}
+
 /**
  * Same result shape as coingecko.getMarkets(), built from CoinPaprika tickers.
  * The 7-day sparkline is not available for free here, so the last one we got
- * from CoinGecko is kept.
+ * from CoinGecko is kept (or a 24h chart is drawn when there is none).
  * @param {Array<{id: string, name?: string, symbol?: string}>} coins
  */
 export async function getMarketsFromPaprika(coins) {
@@ -39,17 +54,25 @@ export async function getMarketsFromPaprika(coins) {
       const paprikaId = await resolveId(coin, idMap);
       const ticker = await getJson(`${BASE_URL}/tickers/${paprikaId}`);
       const quote = ticker.quotes.USD;
+      let sparkline = coin.sparkline ?? [];
+      let sparklineRange = coin.sparklineRange ?? "7d";
+      if (sparkline.length < 2 || sparklineRange === "24h") {
+        sparkline = await getHistory24h(paprikaId).catch(() => []);
+        sparklineRange = "24h";
+      }
       return {
         ...coin,
         name: coin.name && coin.name !== coin.id ? coin.name : ticker.name,
         symbol: coin.symbol || ticker.symbol,
+        image: coin.image ?? `https://static.coinpaprika.com/coin/${paprikaId}/logo.png`,
         rank: ticker.rank,
         price: quote.price,
         marketCap: quote.market_cap,
         volume: quote.volume_24h,
         change24h: quote.percent_change_24h,
         change7d: quote.percent_change_7d,
-        sparkline: coin.sparkline ?? [],
+        sparkline,
+        sparklineRange,
       };
     }),
   );

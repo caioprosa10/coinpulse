@@ -144,7 +144,7 @@ async function refreshMarkets({ manual = false } = {}) {
     showBanner(
       state.source === "CoinGecko"
         ? ""
-        : "CoinGecko is not responding right now, so prices come from the backup source (CoinPaprika). 7-day charts show the last CoinGecko data.",
+        : "CoinGecko is not responding right now, so prices come from the backup source (CoinPaprika). Charts show the last CoinGecko 7-day data, or the last 24h when there is none.",
       "info",
     );
     render();

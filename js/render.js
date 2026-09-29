@@ -53,8 +53,8 @@ function coinRowTemplate(coin, index, currency, rates) {
     </div>
     ${changeBadge(coin.change24h, "24h", "coin-row__d24")}
     ${changeBadge(coin.change7d, "7d", "coin-row__d7")}
-    <div class="coin-row__chart">
-      ${pending ? "" : sparklineSvg(coin.sparkline, { trend: trend7d === "flat" ? undefined : trend7d })}
+    <div class="coin-row__chart" ${coin.sparklineRange === "24h" ? 'data-range="24h"' : ""}>
+      ${pending ? "" : sparklineSvg(coin.sparkline, { trend: coin.sparklineRange === "24h" ? undefined : trend7d === "flat" ? undefined : trend7d })}
     </div>
     <span class="coin-row__volume" data-label="Vol">${pending ? "—" : formatCompact(volume, currency)}</span>
     <button type="button" class="coin-row__remove" data-id="${escapeHtml(coin.id)}"
