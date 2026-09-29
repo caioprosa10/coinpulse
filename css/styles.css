@@ -860,7 +860,19 @@ a {
 }
 
 .coin-row__chart {
+  position: relative;
   height: 40px;
+}
+
+/* small tag when the chart shows 24h (backup source) instead of 7 days */
+.coin-row__chart[data-range="24h"]::after {
+  content: "24h";
+  position: absolute;
+  top: -6px;
+  right: 0;
+  font-family: var(--font-data);
+  font-size: 0.6rem;
+  color: var(--outline);
 }
 
 .sparkline {
