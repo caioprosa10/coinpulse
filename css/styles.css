@@ -400,6 +400,11 @@ a {
   animation: pulse 1s ease-in-out infinite;
 }
 
+.sync-status[data-state="backup"] .sync-status__dot {
+  background: #f5c26b;
+  box-shadow: 0 0 8px #f5c26b;
+}
+
 .sync-status[data-state="error"] .sync-status__dot {
   background: var(--down);
   box-shadow: 0 0 8px var(--down);
@@ -462,6 +467,12 @@ a {
   background: var(--down-bg);
   color: var(--down);
   animation: drop-in 0.25s var(--ease);
+}
+
+.banner[data-type="info"] {
+  border-color: rgba(76, 215, 246, 0.35);
+  background: rgba(76, 215, 246, 0.08);
+  color: var(--primary);
 }
 
 /* ---------- summary cards ---------- */
