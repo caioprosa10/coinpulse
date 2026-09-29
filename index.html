@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="CoinPulse — a no-login crypto watchlist with live prices, 24h/7d change, 7-day sparklines and USD/BRL/EUR conversion."
+    />
+    <meta name="theme-color" content="#0b1326" />
+    <title>CoinPulse | Crypto Watchlist</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="CoinPulse home">
+        <svg class="brand__icon" viewBox="0 0 56 56" aria-hidden="true">
+          <defs>
+            <linearGradient id="brandPulse" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#06B6D4" />
+              <stop offset="50%" stop-color="#3B82F6" />
+              <stop offset="100%" stop-color="#10B981" />
+            </linearGradient>
+          </defs>
+          <rect x="4" y="4" width="48" height="48" rx="14" fill="#131b2e" stroke="#06B6D4" stroke-width="2" />
+          <path
+            d="M14 29 L21 29 L25 16 L31 40 L37 23 L41 29 L46 29"
+            stroke="url(#brandPulse)"
+            stroke-width="3"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <circle cx="37" cy="23" r="3" fill="#10B981" />
+        </svg>
+        <span class="brand__name">Coin<span>Pulse</span></span>
+      </a>
+
+      <form class="search" id="search-form" role="search" autocomplete="off" novalidate>
+        <label for="coin-search" class="sr-only">Search a coin to add to your watchlist</label>
+        <svg class="search__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+        <input
+          id="coin-search"
+          class="search__input"
+          type="search"
+          placeholder="Search coin to add…"
+          title="Tip: press / to jump here"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="search-suggestions"
+          maxlength="40"
+        />
+        <button type="submit" class="btn btn--primary search__submit">+ Add</button>
+        <ul id="search-suggestions" class="suggestions" role="listbox" hidden></ul>
+        <p id="search-error" class="search__error" hidden></p>
+      </form>
+
+      <div class="topbar__actions">
+        <p class="sync-status" id="sync-status" data-state="loading">
+          <span class="sync-status__dot" aria-hidden="true"></span>
+          <span class="sync-status__text">Loading prices…</span>
+        </p>
+        <div class="currency-toggle" role="group" aria-label="Display currency">
+          <button type="button" data-currency="USD" aria-pressed="true">USD</button>
+          <button type="button" data-currency="BRL" aria-pressed="false">BRL</button>
+          <button type="button" data-currency="EUR" aria-pressed="false">EUR</button>
+        </div>
+        <button type="button" id="refresh-btn" class="icon-btn" aria-label="Refresh prices" title="Refresh prices">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+            <path d="M20 4v5h-5" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div id="error-banner" class="banner" role="alert" hidden></div>
+
+      <section class="summary" aria-label="Watchlist summary">
+        <article class="stat-card">
+          <header class="stat-card__header">
+            <h2 class="stat-card__title">Active watchlist</h2>
+            <span class="live-pill"><span class="live-pill__dot"></span>Live</span>
+          </header>
+          <p class="stat-card__value">
+            <span id="stat-count" class="stat-card__number">0</span>
+            <span class="stat-card__unit">assets</span>
+          </p>
+          <p class="stat-card__sub">No login · saved in your browser</p>
+        </article>
+
+        <article class="stat-card">
+          <header class="stat-card__header">
+            <h2 class="stat-card__title">Top gainer 24h</h2>
+            <span id="stat-gainer-badge" class="change" hidden></span>
+          </header>
+          <p class="stat-card__value">
+            <span id="stat-gainer" class="stat-card__number">—</span>
+            <span id="stat-gainer-change" class="stat-card__change"></span>
+          </p>
+          <p id="stat-loser" class="stat-card__sub">Top loser: —</p>
+        </article>
+
+        <article class="stat-card">
+          <header class="stat-card__header">
+            <h2 class="stat-card__title">Watchlist volume 24h</h2>
+          </header>
+          <p class="stat-card__value">
+            <span id="stat-volume" class="stat-card__number">—</span>
+          </p>
+          <p id="stat-rate" class="stat-card__sub">Exchange rate: loading…</p>
+        </article>
+      </section>
+
+      <section class="toolbar" aria-label="Quick add and filters">
+        <div class="quick-add">
+          <span class="toolbar__label">Quick add:</span>
+          <div id="quick-add" class="chips"></div>
+        </div>
+        <div class="filters" role="group" aria-label="Filter the watchlist">
+          <button type="button" class="filter" data-filter="all" aria-pressed="true">All (<span data-count="all">0</span>)</button>
+          <button type="button" class="filter filter--up" data-filter="gainers" aria-pressed="false">Gainers (<span data-count="gainers">0</span>)</button>
+          <button type="button" class="filter filter--down" data-filter="losers" aria-pressed="false">Losers (<span data-count="losers">0</span>)</button>
+        </div>
+      </section>
+
+      <section class="watchlist" aria-labelledby="watchlist-title">
+        <h1 id="watchlist-title" class="sr-only">Your crypto watchlist</h1>
+        <div class="watchlist__head" aria-hidden="true">
+          <span>#</span>
+          <span>Coin</span>
+          <span class="align-right">Price (<span id="price-col-currency">USD</span>)</span>
+          <span class="align-right">24h %</span>
+          <span class="align-right">7d %</span>
+          <span class="align-center">7-day trend</span>
+          <span class="align-right">Volume 24h</span>
+          <span class="align-center">Remove</span>
+        </div>
+        <ul id="watchlist" class="watchlist__list"></ul>
+        <div id="empty-state" class="empty-state" hidden>
+          <p class="empty-state__title">Your watchlist is empty</p>
+          <p>Search for a coin above or use <strong>Quick add</strong> to start tracking.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>
+        Market data by <a href="https://www.coingecko.com/" target="_blank" rel="noopener">CoinGecko</a> ·
+        Exchange rates by <a href="https://frankfurter.dev/" target="_blank" rel="noopener">Frankfurter</a>
+      </p>
+      <p>CoinPulse · WDD 330 Final Project · Caio Palladino</p>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
