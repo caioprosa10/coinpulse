@@ -8,7 +8,13 @@ const BASE_URL = "https://api.frankfurter.dev/v1";
  */
 export async function getRates(symbols = ["BRL", "EUR"]) {
   const params = new URLSearchParams({ base: "USD", symbols: symbols.join(",") });
-  const response = await fetch(`${BASE_URL}/latest?${params}`);
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}/latest?${params}`, { signal: AbortSignal.timeout(10_000) });
+  } catch {
+    // offline, DNS or timeout: the caller keeps the last cached rates
+    throw new Error("Could not reach Frankfurter (network error).");
+  }
   if (!response.ok) {
     throw new Error(`Frankfurter returned an error (${response.status}).`);
   }

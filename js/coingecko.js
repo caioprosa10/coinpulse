@@ -2,6 +2,8 @@
 // Docs: https://docs.coingecko.com/v3.0.1/reference/coins-markets
 
 const BASE_URL = "https://api.coingecko.com/api/v3";
+const TIMEOUT = 12_000; // a hung request must not stall the whole refresh
+const MAX_IDS_PER_REQUEST = 250; // CoinGecko's per_page cap
 
 export class ApiError extends Error {
   constructor(message, status = 0) {
@@ -10,19 +12,47 @@ export class ApiError extends Error {
     this.status = status;
   }
 
+  /** true only when CoinGecko itself refused us (HTTP 429) */
   get isRateLimit() {
-    // CoinGecko answers 429 when rate limited; the browser sometimes blocks
-    // that response (no CORS header), which shows up as a network error (0)
-    return this.status === 429 || this.status === 0;
+    return this.status === 429;
+  }
+
+  /**
+   * true when the request never got an answer: offline, DNS, CORS, timeout, or a
+   * 429 whose response the browser hid. Transient, so it is worth retrying soon
+   * instead of falling back to the backup source for minutes.
+   */
+  get isNetworkError() {
+    return this.status === 0;
+  }
+}
+
+// one extra attempt covers the common one-second network blip
+async function fetchWithRetry(url, options, attempts = 2) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fetch(url, options);
+    } catch (error) {
+      if (error.name === "AbortError" && options.signal?.aborted) throw error; // caller cancelled
+      if (attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    }
   }
 }
 
 async function getJson(url, options = {}) {
+  // combine the caller's signal (search typing) with our own timeout
+  const timeout = AbortSignal.timeout(TIMEOUT);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+
   let response;
   try {
-    response = await fetch(url, { headers: { accept: "application/json" }, ...options });
+    response = await fetchWithRetry(url, { headers: { accept: "application/json" }, ...options, signal });
   } catch (error) {
-    if (error.name === "AbortError") throw error;
+    if (options.signal?.aborted) throw error; // the caller cancelled: let main.js ignore it
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      throw new ApiError("CoinGecko took too long to answer.", 0);
+    }
     throw new ApiError("Could not reach CoinGecko (network error or rate limit).", 0);
   }
   if (response.status === 429) {
@@ -50,27 +80,41 @@ function toCoin(raw) {
     change24h: raw.price_change_percentage_24h_in_currency ?? raw.price_change_percentage_24h,
     change7d: raw.price_change_percentage_7d_in_currency ?? null,
     sparkline: raw.sparkline_in_7d?.price ?? [],
+    sparklineRange: "7d",
     lastUpdated: raw.last_updated,
   };
 }
 
-/**
- * Get market data (price, % change, volume, 7-day sparkline) for a list of coin ids.
- * One request for the whole watchlist keeps us under the free-tier rate limit.
- */
-export async function getMarkets(ids) {
-  if (!ids.length) return [];
+async function getMarketsPage(ids) {
   const params = new URLSearchParams({
     vs_currency: "usd",
     ids: ids.join(","),
     order: "market_cap_desc",
-    per_page: String(Math.min(ids.length, 250)),
+    per_page: String(ids.length),
     page: "1",
     sparkline: "true",
     price_change_percentage: "24h,7d",
   });
   const data = await getJson(`${BASE_URL}/coins/markets?${params}`);
-  return data.map(toCoin);
+  return Array.isArray(data) ? data.map(toCoin) : [];
+}
+
+/**
+ * Get market data (price, % change, volume, 7-day sparkline) for a list of coin ids.
+ * Watchlists longer than the API's 250-per-page cap are split into several
+ * requests, so no coin is silently left out of the answer.
+ */
+export async function getMarkets(ids) {
+  if (!ids.length) return [];
+  const pages = [];
+  for (let i = 0; i < ids.length; i += MAX_IDS_PER_REQUEST) {
+    pages.push(ids.slice(i, i + MAX_IDS_PER_REQUEST));
+  }
+  const results = [];
+  for (const page of pages) {
+    results.push(...(await getMarketsPage(page)));
+  }
+  return results;
 }
 
 /** Search every coin CoinGecko knows by name or symbol. */

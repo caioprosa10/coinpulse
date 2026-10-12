@@ -24,7 +24,11 @@ import {
 
 const REFRESH_INTERVAL = 60_000; // 60s keeps us well under CoinGecko's free limit
 const MAX_BACKOFF = 5 * 60_000;
-const GECKO_COOLDOWN = 5 * 60_000; // after a CoinGecko failure, use the backup for 5 min
+const FIRST_RETRY = 15_000; // a blip should not cost a full minute before retrying
+const GECKO_COOLDOWN = 5 * 60_000; // after a real rate limit, use the backup for 5 min
+// A network error says nothing about CoinGecko's health (we were offline, the
+// request timed out, an extension blocked it), so we try it again right away.
+const GECKO_NETWORK_COOLDOWN = 0;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -67,6 +71,7 @@ const state = {
   delay: REFRESH_INTERVAL,
   source: "CoinGecko",
   geckoBlockedUntil: 0,
+  failures: 0,
   search: { query: "", results: [], activeIndex: -1, remoteTimer: null, controller: null, searching: false },
 };
 
@@ -124,14 +129,14 @@ async function refreshMarkets({ manual = false } = {}) {
   try {
     const coins = await fetchMarkets(ids);
     const found = new Set(coins.map((coin) => coin.id));
-    if (state.source === "CoinGecko") {
+    if (state.source === "CoinGecko" && coins.length > 0) {
       // ids that CoinGecko doesn't know anymore are removed from the list
       ids.filter((id) => !found.has(id)).forEach((id) => {
         state.watchlist.remove(id);
         showToast(`“${id}” was not found on CoinGecko and was removed.`, "error");
       });
     } else {
-      // backup source: keep the old data (or a placeholder row) for any coin it couldn't find
+      // backup source (or an empty answer): keep the old data, or a placeholder row
       ids.filter((id) => !found.has(id)).forEach((id) => {
         coins.push(state.coins.find((coin) => coin.id === id) ?? placeholderCoin(id));
       });
@@ -139,6 +144,7 @@ async function refreshMarkets({ manual = false } = {}) {
 
     state.coins = state.watchlist.sortByWatchlist(coins);
     state.updatedAt = Date.now();
+    state.failures = 0;
     state.delay = REFRESH_INTERVAL;
     saveCachedMarkets(state.coins);
     showBanner(
@@ -155,8 +161,10 @@ async function refreshMarkets({ manual = false } = {}) {
     if (manual) showToast("Prices updated");
   } catch (error) {
     console.warn(error);
-    // back off: wait longer after every failed attempt (rate limits)
-    state.delay = Math.min(state.delay * 2, MAX_BACKOFF);
+    // back off: wait longer after every failed attempt (rate limits), but the
+    // first retry stays quick so a one-second blip is not punished for minutes
+    state.failures += 1;
+    state.delay = Math.min(FIRST_RETRY * 2 ** (state.failures - 1), MAX_BACKOFF);
     const cachedNote = state.updatedAt ? ` Showing prices from ${timeLabel(state.updatedAt)}.` : "";
     showBanner(`${error.message}${cachedNote} Retrying in ${Math.round(state.delay / 1000)}s.`);
     renderStatus(dom.status, { state: "error", text: "Offline · showing last saved prices" });
@@ -188,7 +196,9 @@ async function fetchMarkets(ids) {
       return coins;
     } catch (error) {
       console.warn(error);
-      state.geckoBlockedUntil = Date.now() + GECKO_COOLDOWN;
+      // only a genuine 429 means "stay away for a while"
+      const cooldown = error.isRateLimit ? GECKO_COOLDOWN : GECKO_NETWORK_COOLDOWN;
+      state.geckoBlockedUntil = Date.now() + cooldown;
     }
   }
   const known = ids.map(
@@ -246,6 +256,7 @@ function addCoin(coin) {
   // show the row right away, prices arrive with the next fetch
   state.coins.push({ id: coin.id, name: coin.name, symbol: coin.symbol, image: coin.image, rank: coin.rank, price: null });
   if (state.filter !== "all") setFilter("all");
+  saveCachedMarkets(state.coins);
   render();
   const row = dom.list.querySelector(`[data-id="${CSS.escape(coin.id)}"]`);
   row?.classList.add("is-new");
@@ -476,6 +487,7 @@ function bindEvents() {
 
   dom.refresh.addEventListener("click", () => {
     state.delay = REFRESH_INTERVAL;
+    state.failures = 0;
     state.geckoBlockedUntil = 0; // a manual refresh always tries CoinGecko again
     refreshMarkets({ manual: true });
   });

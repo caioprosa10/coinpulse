@@ -31,6 +31,9 @@ function coinRowTemplate(coin, index, currency, rates) {
   const price = convert(coin.price, currency, rates);
   const volume = convert(coin.volume, currency, rates);
   const trend7d = trendOf(coin.change7d);
+  // the backup source can only give 24h history, so the chart may cover 24h
+  const range = coin.sparklineRange === "24h" ? "24h" : "7d";
+  const chartTrend = range === "24h" || trend7d === "flat" ? undefined : trend7d;
   const image = coin.image
     ? `<img class="coin__logo" src="${escapeHtml(coin.image)}" alt="" width="36" height="36" loading="lazy" />`
     : `<span class="coin__logo coin__logo--placeholder" aria-hidden="true">${symbol.charAt(0)}</span>`;
@@ -53,8 +56,8 @@ function coinRowTemplate(coin, index, currency, rates) {
     </div>
     ${changeBadge(coin.change24h, "24h", "coin-row__d24")}
     ${changeBadge(coin.change7d, "7d", "coin-row__d7")}
-    <div class="coin-row__chart" ${coin.sparklineRange === "24h" ? 'data-range="24h"' : ""}>
-      ${pending ? "" : sparklineSvg(coin.sparkline, { trend: coin.sparklineRange === "24h" ? undefined : trend7d === "flat" ? undefined : trend7d })}
+    <div class="coin-row__chart" ${range === "24h" ? 'data-range="24h"' : ""}>
+      ${pending ? "" : sparklineSvg(coin.sparkline, { trend: chartTrend, range })}
     </div>
     <span class="coin-row__volume" data-label="Vol">${pending ? "—" : formatCompact(volume, currency)}</span>
     <button type="button" class="coin-row__remove" data-id="${escapeHtml(coin.id)}"
@@ -72,14 +75,12 @@ export function filterCoins(coins, filter) {
 
 export function renderWatchlist(listElement, emptyElement, coins, { currency, rates, filter }) {
   const visible = filterCoins(coins, filter);
-  listElement.innerHTML = visible
-    .map((coin, index) => coinRowTemplate(coin, index, currency, rates))
-    .join("");
-
   emptyElement.hidden = coins.length > 0;
-  if (coins.length > 0 && visible.length === 0) {
-    listElement.innerHTML = `<li class="coin-row coin-row--message">No ${filter} in your watchlist right now.</li>`;
-  }
+
+  listElement.innerHTML =
+    coins.length > 0 && visible.length === 0
+      ? `<li class="coin-row coin-row--message">No ${escapeHtml(filter)} in your watchlist right now.</li>`
+      : visible.map((coin, index) => coinRowTemplate(coin, index, currency, rates)).join("");
 }
 
 export function renderSkeleton(listElement, count = 5) {

@@ -11,10 +11,10 @@ export function downsample(values, maxPoints = 56) {
 
 /**
  * @param {number[]} prices  array of prices (oldest -> newest)
- * @param {{width?: number, height?: number, trend?: "up"|"down"|"flat"}} options
+ * @param {{width?: number, height?: number, trend?: "up"|"down"|"flat", range?: "7d"|"24h"}} options
  * @returns {string} SVG markup
  */
-export function sparklineSvg(prices = [], { width = 140, height = 40, trend } = {}) {
+export function sparklineSvg(prices = [], { width = 140, height = 40, trend, range = "7d" } = {}) {
   const points = downsample(prices.filter(Number.isFinite));
   if (points.length < 2) {
     return `<span class="sparkline sparkline--empty">No chart data</span>`;
@@ -22,13 +22,13 @@ export function sparklineSvg(prices = [], { width = 140, height = 40, trend } = 
 
   const min = Math.min(...points);
   const max = Math.max(...points);
-  const range = max - min || 1; // avoid dividing by 0 for stablecoins
+  const spread = max - min || 1; // avoid dividing by 0 for stablecoins
   const padding = 3;
 
   // map each price to an x/y position inside the SVG box
   const coords = points.map((price, i) => {
     const x = (i / (points.length - 1)) * width;
-    const y = padding + (1 - (price - min) / range) * (height - padding * 2);
+    const y = padding + (1 - (price - min) / spread) * (height - padding * 2);
     return [x.toFixed(1), y.toFixed(1)];
   });
 
@@ -38,7 +38,8 @@ export function sparklineSvg(prices = [], { width = 140, height = 40, trend } = 
   const id = `spark-${++gradientId}`;
 
   return `<svg class="sparkline sparkline--${direction}" viewBox="0 0 ${width} ${height}"
-    preserveAspectRatio="none" role="img" aria-label="7-day trend: ${direction}">
+    preserveAspectRatio="none" role="img"
+    aria-label="${range === "24h" ? "24-hour" : "7-day"} trend: ${direction}">
     <defs>
       <linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="currentColor" stop-opacity="0.35" />
