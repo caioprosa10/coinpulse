@@ -12,7 +12,7 @@ async function getJson(url, attempts = 3) {
     let response;
     try {
       response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT) });
-    } catch (error) {
+    } catch {
       // offline, DNS, CORS or timeout: no response at all
       if (attempt >= attempts) throw new Error("Could not reach CoinPaprika (network error).");
       await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
